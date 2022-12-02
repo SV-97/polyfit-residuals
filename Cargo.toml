@@ -1,0 +1,34 @@
+[package]
+name = "polyfit-residuals"
+version = "0.1.0"
+edition = "2021"
+description = "Efficiently calculate the residual errors of all polynomial models (up to some degree) for a given dataset. (The polynomial fit is in the least squares sense)"
+authors = ["Stefan Volz"]
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SV-97/polyfit-residuals/"
+keywords = [
+    "mathematics",
+    "regression",
+    "statistics",
+    "algorithms",
+    "polynomial",
+    # crates.io only supports five keywords
+    # "polyfit",
+    # "polynomial fitting",
+    # "math",
+]
+categories = ["algorithms", "mathematics", "science"]
+
+[dependencies]
+ndarray = "0.15.6"
+num-traits = "0.2.15"
+
+[dev-dependencies]
+approx = "0.5.1"
+ndarray = { version = "0.15.6", features = ["approx-0_5"] }
+criterion = "0.4.0"
+
+[[bench]]
+name = "large_data"
+harness = false
