@@ -74,7 +74,7 @@ where
     system_matrix
 }
 
-/// Compute the residual squared errors for all polynomials of degree at most `max_deg`
+/// Compute the residual squared errors (RSS) for all polynomials of degree at most `max_deg`
 /// for the data segments `xs[j..=i]`, `ys[j..=i]` for all `i`, `j`.
 ///
 /// # Returns
@@ -104,7 +104,7 @@ where
     ret
 }
 
-/// Compute the residual squared errors for all polynomials of degree at most `max_deg`
+/// Compute the residual squared errors (RSS) for all polynomials of degree at most `max_deg`
 /// for the data segments `xs[0..=i]`, `ys[0..=i]` for all `i`.
 ///
 /// # Returns
