@@ -34,7 +34,7 @@ where
     /// with `coeffs.len()` degrees of freedom / of degree `basis_elems.len()`.
     pub fn new(coeffs: DataC, basis_elems: DataX) -> Self {
         assert_eq!(coeffs.as_ref().len(), basis_elems.as_ref().len() + 1);
-        assert!(coeffs.as_ref().len() >= 1);
+        assert!(!coeffs.as_ref().is_empty());
         Self {
             coeffs,
             basis_elems,
