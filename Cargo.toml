@@ -1,8 +1,8 @@
 [package]
 name = "polyfit-residuals"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Efficiently calculate the residual errors of all polynomial models (up to some degree) for a given dataset. (The polynomial fit is in the least squares sense)"
+description = "Efficiently calculate the residual errors (in the least squares sense) of all polynomial models (up to some degree) for a given dataset."
 authors = ["Stefan Volz"]
 readme = "README.md"
 license = "MIT OR Apache-2.0"

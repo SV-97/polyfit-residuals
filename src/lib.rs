@@ -3,10 +3,17 @@
 //!
 //! # Example
 //! For examples please see [residuals_from_front].
-use ndarray::{s, Array2, ArrayView1, ArrayViewMut2, Axis};
-use num_traits::real::Real;
 
-use std::fmt::Debug;
+// Used for array based polynomials
+#![feature(generic_const_exprs)]
+
+pub mod poly;
+
+use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut2, Axis};
+use num_traits::real::Real;
+use poly::{NewtonPolynomial, OwnedNewtonPolynomial};
+
+use std::{fmt::Debug, mem::MaybeUninit};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum FitError {
@@ -33,6 +40,7 @@ where
     }
 }
 
+// The subtracted base elems start at index `0` of base and go to `len - 1`
 fn generate_system_matrix<R>(ys: ArrayView1<R>, base: ArrayView1<R>) -> Array2<R>
 where
     R: Real + Clone + Debug,
@@ -210,6 +218,88 @@ where
     Ok(residuals)
 }
 
+pub fn solve_upper_triangular_system<R>(lhs: ArrayView2<R>, rhs: ArrayView1<R>) -> Array1<R>
+where
+    R: Real + Debug + 'static,
+{
+    assert!(lhs.is_square());
+    assert_eq!(lhs.shape()[1], rhs.shape()[0]);
+    let row_count = rhs.shape()[0];
+    let mut sol = Array1::uninit(row_count);
+    for i in (0..row_count).into_iter().rev() {
+        let already_solved = unsafe { sol.slice(s![i + 1..]).assume_init() };
+        let ax = lhs.slice(s![i, i + 1..]).dot(&already_solved);
+        sol[i] = MaybeUninit::new((rhs[i] - ax) / lhs[[i, i]]);
+    }
+    unsafe { sol.assume_init() }
+}
+
+/// Try fitting a polynomial to some data
+pub fn try_fit_poly<R>(
+    xs: ArrayView1<R>,
+    ys: ArrayView1<R>,
+    degree: usize,
+) -> Result<OwnedNewtonPolynomial<R, R>, FitError>
+where
+    R: Real + Debug + 'static,
+{
+    if xs.len() != ys.len() {
+        return Err(FitError::InputsOfDifferentLengths);
+    }
+    let data_len = xs.len();
+
+    let max_dofs = degree + 1;
+    if max_dofs > data_len {
+        return Err(FitError::DegreeTooHigh);
+    }
+
+    // select one base point for each degree of freedom
+    let base = xs.slice(s![..max_dofs]).to_owned();
+    let mut system_matrix = generate_system_matrix(ys, base.view());
+    // first axis is rb, second is deg such that on data[0..=rb] the polynomial of degree deg
+    // has the residual error at this index
+
+    let last_row_idx = system_matrix.shape()[0] - 1;
+    let last_col_idx = system_matrix.shape()[1] - 1;
+
+    // TODO: this isn't necessary if we don't wanna compute all the intermediary residuals
+    // so we could omit this step
+    // eliminate base mat downwards such that we can start our later eliminations at deg 0
+    for base_idx in 1..max_dofs {
+        // at base_idx i there's the highest nonzero deg term is i
+        for deg in 0..base_idx {
+            apply_givens(system_matrix.view_mut(), base_idx, deg);
+        }
+    }
+
+    // repeat procedure we already used on the basis entries: eliminate higher and higher
+    // orders for each data point in turn while accumulating the residuals along the way
+    for (x, y) in xs.into_iter().zip(ys.into_iter()).skip(max_dofs) {
+        // write newton poly evaluation at x into last row of system matrix
+        system_matrix[[last_row_idx, 0]] = R::one();
+        for col in 1..last_col_idx {
+            system_matrix[[last_row_idx, col]] =
+                system_matrix[[last_row_idx, col - 1]] * (*x - base[col - 1]);
+        }
+        // write y into last column of last row of system matrix
+        system_matrix[[last_row_idx, last_col_idx]] = *y;
+        // eliminate the complete row we just added back to zeros
+        for deg in 0..max_dofs {
+            apply_givens(system_matrix.view_mut(), last_row_idx, deg);
+        }
+    }
+    let coeffs = solve_upper_triangular_system(
+        system_matrix.slice(s![..last_row_idx, ..last_col_idx]),
+        system_matrix.slice(s![..last_row_idx, last_col_idx]),
+    );
+    dbg!(&coeffs);
+    dbg!(&base);
+    Ok(NewtonPolynomial::new(
+        coeffs.to_vec(),
+        base.slice(s![0..base.len() - 1]).to_vec(),
+    )) // create newton poly by solving first few rows of matrix
+}
+
 #[cfg(test)]
 mod tests {
     use approx::assert_abs_diff_eq;
@@ -343,5 +433,37 @@ mod tests {
         assert_eq!(sol[1].shape(), [3, 3]);
         assert_eq!(sol[2].shape(), [2, 2]);
         assert_eq!(sol[3].shape(), [1, 1]);
+    }
+
+    #[test]
+    fn solve_diag() {
+        let lhs = arr2(&[[0.5, 0., 0.], [0., 0.25, 0.], [0., 0., 0.125]]);
+        let rhs = arr1(&[1., 1., 1.]);
+        let correct_sol = arr1(&[2., 4., 8.]);
+        let our_sol = solve_upper_triangular_system(lhs.view(), rhs.view());
+
+        assert_abs_diff_eq!(&our_sol, &correct_sol, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn solve_utri() {
+        let lhs = arr2(&[[0.5, 0.5, 0.5], [0., 0.25, 0.25], [0., 0., 0.125]]);
+        let rhs = arr1(&[1., 1., 1.]);
+        let correct_sol = arr1(&[-2., -4., 8.]);
+        let our_sol = solve_upper_triangular_system(lhs.view(), rhs.view());
+
+        assert_abs_diff_eq!(&our_sol, &correct_sol, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn fit_linear() {
+        let xs = arr1(&[1., 2., 3., 4.]);
+        let ys = arr1(&[2., 3., 4., 5.]);
+        let poly =
+            try_fit_poly(xs.view(), ys.view(), 1).expect("Failed to fit linear polynomial to data");
+        assert_abs_diff_eq!(poly.left_eval(1.), 2., epsilon = 1e-12);
+        assert_abs_diff_eq!(poly.left_eval(2.), 3., epsilon = 1e-12);
+        assert_abs_diff_eq!(poly.left_eval(3.), 4., epsilon = 1e-12);
+        assert_abs_diff_eq!(poly.left_eval(4.), 5., epsilon = 1e-12);
     }
 }
