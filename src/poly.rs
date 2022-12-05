@@ -8,9 +8,12 @@ use std::{
     ops::{Mul, Sub},
 };
 
+/// A Newton Polynomial that owns its basis and coeffs in form of a `Vec`.
 pub type OwnedNewtonPolynomial<C, X> = NewtonPolynomial<C, X, Vec<C>, Vec<X>>;
+/// A Newton Polynomial of fixed Degree owning its basis and coeffs as static arrays.
 pub type StaticNewtonPolynomial<C, X, const DEGREE: usize> =
     NewtonPolynomial<C, X, [C; DEGREE + 1], [X; DEGREE]>;
+/// A Newton Polynomial with borrowed basis and coeffs.
 pub type RefNewtonPolynomial<'a, C, X> = NewtonPolynomial<C, X, &'a [C], &'a [X]>;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -30,7 +33,7 @@ where
     DataX: AsRef<[X]>,
 {
     /// Construct the polynomial
-    ///     coeffs[0] + coeffs[1] (x - basis_elems[0]) + coeffs[2] (x - basis_elems[0]) * (x - basis_elems[1]) + ...
+    ///     coeffs\[0\] + coeffs\[1\] (x - basis_elems\[0\]) + coeffs\[2\] (x - basis_elems\[0\]) * (x - basis_elems\[1\]) + ...
     /// with `coeffs.len()` degrees of freedom / of degree `basis_elems.len()`.
     pub fn new(coeffs: DataC, basis_elems: DataX) -> Self {
         assert_eq!(coeffs.as_ref().len(), basis_elems.as_ref().len() + 1);
