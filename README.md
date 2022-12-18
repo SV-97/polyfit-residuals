@@ -7,4 +7,4 @@ The algorithm used is essentially a Givens rotation based QR decomposition. For 
 The algorithm for all segments starting at 0 should be O(nd) and the one for **all** segments should be O(n²d²) where n is the size of the input and d the maximal polynomial degree.
 
 # Performance
-Criterion benchmarks run on the authors machine (AMD Ryzen 9 5900X @ ~4.6GHz) may be found [here](BENCHMARKS.md).
+Criterion benchmarks run on the author's machine (AMD Ryzen 9 5900X @ ~4.6GHz) may be found [here](BENCHMARKS.md).
