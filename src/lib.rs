@@ -13,20 +13,20 @@ use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut2, Axis};
 use num_traits::real::Real;
 use poly::{NewtonPolynomial, OwnedNewtonPolynomial};
 
-use std::{fmt::Debug, mem::MaybeUninit};
+use std::mem::MaybeUninit;
 
-/// The errors that can occur during the polynomial fitting process
+/// The different errors that can occur during the polynomial fitting process.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum FitError {
     InputsOfDifferentLengths,
     DegreeTooHigh,
 }
 
-/// Apply a givens rotation eliminating entry [i,j] of the given array *in-place*
+/// Apply a givens rotation eliminating entry [i,j] of the given array *in-place*.
 #[inline]
 fn apply_givens<R>(mut arr: ArrayViewMut2<R>, i: usize, j: usize)
 where
-    R: Real + Clone + Debug,
+    R: Real,
 {
     let a = arr[[j, j]];
     let b = arr[[i, j]];
@@ -41,21 +41,28 @@ where
     }
 }
 
-// The subtracted base elems start at index `0` of base and go to `len - 1`
+/// Generate extended system matrix.
+///
+/// # Returns
+/// Generates the extended system block matrix [[L H]; [l h]] where L is the triangular
+/// matrix corresponding to the newton polynomial evaluations, H are the corresponding
+/// right hand sides and l and h are the entries which we'll use later on to store the
+/// newton polynomial evaluations and right hand sides for each data point that's not
+/// part of the basis.
+///
+/// # Arguments
+/// * `ys` - The "output values" / right hand sides corresponding to the basis elements `base`.
+/// * `base` - The collection of the (xᵢ)ᵢ corresponding to the terms (x - xᵢ) in the Newton basis
+///     being used.
 fn generate_system_matrix<R>(ys: ArrayView1<R>, base: ArrayView1<R>) -> Array2<R>
 where
-    R: Real + Clone + Debug,
+    R: Real,
 {
     let max_dofs = base.len();
-    // We create the block matrix
-    // [R L]
-    // [r l]
-    // where R is the triangular matrix corresponding to the newton polynomial evaluations,
-    // L are the corresponding right hand sides and r and l are the entries which we'll use
-    // later on to store the newton polynomial evaluations and right hand sides for each data
-    // point that's not part of the basis.
+    // Allocate zero initialized buffer for matrix; we'll write all the nonzero entries into it.
     let mut system_matrix = Array2::zeros((max_dofs + 1, max_dofs + 1));
-    // write `ys` for the basis elements to last column
+
+    // write the rhs `ys` for the basis elements into the last column
     system_matrix
         .slice_mut(s![..max_dofs, max_dofs])
         .assign(&ys.slice(s![..max_dofs]));
@@ -64,19 +71,22 @@ where
     system_matrix.slice_mut(s![.., 0]).fill(R::one());
 
     // set all the higher order basis rows
+    // compute all the necessary differences of the basis elements
+    // The subtracted base elems start at index `0` of `base` and go
+    // to `base.len() - 1`.
     let mut diff = {
         let b1 = base
             .slice(s![1_usize..])
             .to_owned()
             .into_shape([base.len() - 1, 1])
-            .unwrap(); //  - base.slice(s![..base.len() - 1]);
-                       //lhs[1:, 1:] = np.cumprod(base[1:].reshape(-1, 1) - base[:-1], axis=1)
-                       // set degree 0 column
+            .unwrap();
         b1 - base.slice(s![..base.len() - 1])
     };
-    // compute cumprod along axis 1
+
+    // compute cumprod along axis 1 (the columns) to get newton poly evals
     diff.accumulate_axis_inplace(Axis(1), |&prev, curr| *curr = *curr * prev);
 
+    // write remainder of L block into the system matrix
     system_matrix
         .slice_mut(s![1..max_dofs, 1..max_dofs])
         .assign(&diff);
@@ -96,7 +106,7 @@ where
 /// For further details and an example see [residuals_from_front].
 pub fn all_residuals<R>(xs: ArrayView1<R>, ys: ArrayView1<R>, max_degree: usize) -> Vec<Array2<R>>
 where
-    R: Real + Clone + Debug,
+    R: Real,
 {
     let mut ret = Vec::with_capacity(xs.len());
     for j in 0..xs.len() {
@@ -123,8 +133,8 @@ where
 /// can't determine 4 unique polynomial coefficients but we can guarantee the error to vanish).
 ///
 /// # Arguments
-/// * `xs` - The "inputs values"
-/// * `ys` - The "output values" corresponding to the `xs`
+/// * `xs` - The "inputs values".
+/// * `ys` - The "output values" corresponding to the `xs`.
 /// * `max_degree` - The maximal polynomial degree we wanna calculate the residual errors for.
 ///
 /// # Note
@@ -151,7 +161,7 @@ pub fn residuals_from_front<R>(
     max_degree: usize,
 ) -> Result<Array2<R>, FitError>
 where
-    R: Real + Clone + Debug,
+    R: Real,
 {
     if xs.len() != ys.len() {
         return Err(FitError::InputsOfDifferentLengths);
@@ -225,8 +235,8 @@ where
 /// The solution vector.
 ///
 /// # Arguments
-/// * `lhs` is a nonsingular upper triangular matrix
-/// * `rhs` a vector with a dimension matching `lhs`
+/// * `lhs` is a nonsingular upper triangular matrix.
+/// * `rhs` a vector with length matching `lhs`'s columns.
 ///
 /// # Examples
 /// ```
@@ -241,9 +251,16 @@ where
 ///
 /// assert_abs_diff_eq!(&our_sol, &correct_sol, epsilon = 1e-12);
 /// ```
+///
+/// # Safety
+/// Nonsingularity of the lhs isn't checked - the behaviour for singular matrices is
+/// safe but undefined.
+///
+/// # Note
+/// This is provided more as a convenience and not optimized.
 pub fn solve_upper_triangular_system<R>(lhs: ArrayView2<R>, rhs: ArrayView1<R>) -> Array1<R>
 where
-    R: Real + Debug + 'static,
+    R: Real + 'static,
 {
     assert!(lhs.is_square());
     assert_eq!(lhs.shape()[1], rhs.shape()[0]);
@@ -306,7 +323,7 @@ pub fn try_fit_poly_with_residual<R>(
     degree: usize,
 ) -> Result<PolyFit<R, R>, FitError>
 where
-    R: Real + Debug + 'static,
+    R: Real + 'static,
 {
     if xs.len() != ys.len() {
         return Err(FitError::InputsOfDifferentLengths);
@@ -396,7 +413,7 @@ pub fn try_fit_poly<R>(
     degree: usize,
 ) -> Result<OwnedNewtonPolynomial<R, R>, FitError>
 where
-    R: Real + Debug + 'static,
+    R: Real + 'static,
 {
     try_fit_poly_with_residual(xs, ys, degree).map(|polyfit| polyfit.polynomial)
 }

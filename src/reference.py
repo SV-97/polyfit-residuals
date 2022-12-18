@@ -1,4 +1,4 @@
-"""Prototype / reference implementation of algorithm including comparison to numpy based impl"""
+"""Prototype / reference implementation of algorithm including comparison to numpy based impl."""
 
 from numbers import Integral
 import numpy as np
@@ -85,13 +85,9 @@ def residuals_from_front(xs: np.ndarray, ys: np.ndarray, max_deg: Integral) -> n
     return residuals
 
 
-# xs = np.linspace(100_000, 10_000_000, num=11)
-# ys = xs**2 + 2*xs # 3*xs**2 + 2*xs + 1
-# ys += np.mean(ys)*0.05 * np.random.randn(len(ys))
+# Some sample data
 xs = np.linspace(1, 10, num=10)
 ys = xs**2 + 2*xs # 3*xs**2 + 2*xs + 1
-# xs = np.array([1., 2., 3., 4., 5.])
-# ys = np.array([2., 4., 6., 8., 10.])
 
 max_deg = 3
 
@@ -114,4 +110,4 @@ np_res = np.array([[numpy_residual(xs[:i], ys[:i], deg) for i in range(1, len(xs
 print("Residuals computed using numpy:")
 print(np_res)
 
-print("Same residuals: ", np.all(np.isclose(np_res, residuals) | (np.isnan(np_res) & np.isnan(residuals))))
+print("The computed residuals match: ", np.all(np.isclose(np_res, residuals) | (np.isnan(np_res) & np.isnan(residuals))))
