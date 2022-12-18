@@ -4,7 +4,7 @@ So it minimizes ∑ᵢ (P(xᵢ)-yᵢ)² where i ∈ I and I is a subsegment of 1
 
 # Algorithm
 The algorithm used is essentially a Givens rotation based QR decomposition. For numerical reasons it uses a Newton basis throughout which should yield better results than some other implementations based on the monomial basis / Vandermonde matrix due to being better conditioned. This might incur some additional runtime costs in some places and save some in others.
-The algorithm for all segments starting at 0 should be O(nd) and the one for **all** segments should be O(n²d) where n is the size of the input and d the maximal polynomial degree.
+The algorithm for all segments starting at 0 should be O(nd) and the one for **all** segments should be O(nd²) where n is the size of the input and d the maximal polynomial degree.
 
 # Performance
 On my machine (5900X @ ~4.6GHz) I find the following numbers for some benchmarks (generated using criterion):
