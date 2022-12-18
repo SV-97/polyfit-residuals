@@ -123,6 +123,41 @@ where
     ret
 }
 
+#[cfg(feature = "parallel_rayon")]
+/// A parallel version of [all_residuals_par]. Please have a look at the sequential version for details.
+pub fn all_residuals_par<R>(
+    xs: ArrayView1<R>,
+    ys: ArrayView1<R>,
+    max_degree: usize,
+) -> Vec<Array2<R>>
+where
+    R: Real + Send + Sync,
+{
+    use rayon::prelude::*;
+
+    // rayon::ThreadPoolBuilder::new()
+    //     .num_threads(usize::from(n_threads))
+    //     .build_global()
+    //     .unwrap();
+    // let threadpool = rayon::ThreadPoolBuilder::new()
+    //     .num_threads(usize::from(n_threads))
+    //     .build()
+    //     .unwrap();
+    let ret = (0..xs.len())
+        .into_par_iter()
+        .map(|j| {
+            let max_dof_on_seg = xs.len() - j;
+            residuals_from_front(
+                xs.slice(s![j..]),
+                ys.slice(s![j..]),
+                std::cmp::min(max_dof_on_seg - 1, max_degree),
+            )
+            .unwrap()
+        })
+        .collect();
+    ret
+}
+
 /// Compute the residual squared errors (RSS) for all polynomials of degree at most `max_deg`
 /// for the data segments `xs[0..=i]`, `ys[0..=i]` for all `i`.
 ///
