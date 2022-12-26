@@ -104,10 +104,16 @@ where
 /// This function has linear time and memory complexity in the maximal degree and quadratic ones
 /// in the length of the input.
 /// For further details and an example see [residuals_from_front].
-pub fn all_residuals<R>(xs: ArrayView1<R>, ys: ArrayView1<R>, max_degree: usize) -> Vec<Array2<R>>
+pub fn all_residuals<'x, 'y, R>(
+    xs: impl Into<ArrayView1<'x, R>>,
+    ys: impl Into<ArrayView1<'y, R>>,
+    max_degree: usize,
+) -> Vec<Array2<R>>
 where
-    R: Real,
+    R: Real + 'x + 'y,
 {
+    let xs = xs.into();
+    let ys = ys.into();
     let mut ret = Vec::with_capacity(xs.len());
     for j in 0..xs.len() {
         let max_dof_on_seg = xs.len() - j;
@@ -125,24 +131,18 @@ where
 
 #[cfg(feature = "parallel_rayon")]
 /// A parallel version of [all_residuals_par]. Please have a look at the sequential version for details.
-pub fn all_residuals_par<R>(
-    xs: ArrayView1<R>,
-    ys: ArrayView1<R>,
+pub fn all_residuals_par<'x, 'y, R>(
+    xs: impl Into<ArrayView1<'x, R>>,
+    ys: impl Into<ArrayView1<'y, R>>,
     max_degree: usize,
 ) -> Vec<Array2<R>>
 where
-    R: Real + Send + Sync,
+    R: Real + Send + Sync + 'x + 'y,
 {
     use rayon::prelude::*;
+    let xs = xs.into();
+    let ys = ys.into();
 
-    // rayon::ThreadPoolBuilder::new()
-    //     .num_threads(usize::from(n_threads))
-    //     .build_global()
-    //     .unwrap();
-    // let threadpool = rayon::ThreadPoolBuilder::new()
-    //     .num_threads(usize::from(n_threads))
-    //     .build()
-    //     .unwrap();
     let ret = (0..xs.len())
         .into_par_iter()
         .map(|j| {
@@ -602,7 +602,7 @@ mod tests {
     fn all_residuals_values() {
         let xs = arr1(&[0., 1., 2., 3., 4., 5., 6.]);
         let ys = arr1(&[8., 9., 10., 1., 4., 9., 16.]);
-        let sol = all_residuals(xs.view(), ys.view(), 5);
+        let sol = all_residuals(&xs, &ys, 5);
 
         let correct_sol_0 = arr2(&[
             [0., 0., 0., 0., 0., 0.],
