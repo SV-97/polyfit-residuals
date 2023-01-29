@@ -5,7 +5,7 @@
 //! For examples please have a look at the exported functions like [residuals_from_front].
 
 // Used for array based polynomials
-#![feature(generic_const_exprs)]
+#![cfg_attr(feature = "nightly-only", feature(generic_const_exprs))]
 
 pub mod poly;
 

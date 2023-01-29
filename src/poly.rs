@@ -10,9 +10,12 @@ use std::{
 
 /// A Newton Polynomial that owns its basis and coeffs in form of a `Vec`.
 pub type OwnedNewtonPolynomial<C, X> = NewtonPolynomial<C, X, Vec<C>, Vec<X>>;
+
+#[cfg(feature = "generic_const_exprs")]
 /// A Newton Polynomial of fixed Degree owning its basis and coeffs as static arrays.
 pub type StaticNewtonPolynomial<C, X, const DEGREE: usize> =
     NewtonPolynomial<C, X, [C; DEGREE + 1], [X; DEGREE]>;
+
 /// A Newton Polynomial with borrowed basis and coeffs.
 pub type RefNewtonPolynomial<'a, C, X> = NewtonPolynomial<C, X, &'a [C], &'a [X]>;
 

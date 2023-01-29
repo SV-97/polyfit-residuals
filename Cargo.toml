@@ -1,6 +1,6 @@
 [package]
 name = "polyfit-residuals"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2021"
 description = "Efficiently calculate the residual errors (in the least squares sense) of all polynomial models (up to some degree) for a given dataset and compute least-squares polynomial fits."
 authors = ["Stefan Volz"]
@@ -35,5 +35,7 @@ name = "bench"
 harness = false
 
 [features]
+default = ["parallel_rayon"]
 # Add rayon-based parallel implementation.
 parallel_rayon = ["dep:rayon"]
+nightly-only = []
