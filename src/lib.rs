@@ -264,6 +264,309 @@ where
     Ok(residuals)
 }
 
+pub mod weighted {
+    //! Provides versions of the main functions for the case of
+    //! a weighted least squares fit. So we calculate the optimal
+    //! target values of
+    //! min_{p polynomial of deg d} ∑ᵢ (wᵢ(p(xᵢ) - yᵢ))²
+    //! for all d and valid discrete intervals of i.
+    use super::*;
+    use itertools::izip;
+
+    /// Compute the weighted residual squared errors for all polynomials of degree at most `max_deg`
+    /// for the data segments `xs[0..=i]`, `ys[0..=i]` for all `i`.
+    ///
+    /// # Returns
+    /// A 2D float array where the first dimension ranges over `i` and the second one over the
+    /// polynomial degree. Note that the array will contain 0 at underdetermined indices (for
+    /// example when fitting a degree 3 polynomial to `data[0..=1]`; with only 2 data point we
+    /// can't determine 4 unique polynomial coefficients but we can guarantee the error to vanish).
+    ///
+    /// # Arguments
+    /// * `xs` - The "inputs values".
+    /// * `ys` - The "output values" corresponding to the `xs`.
+    /// * `max_degree` - The maximal polynomial degree we wanna calculate the residual errors for.
+    /// * `weights` - The weights associated to the measurements.
+    ///
+    /// # Note
+    /// This function has linear time and memory complexity in the length of the input and the
+    /// maximal degree.
+    /// We consider constant polynomials to have degree 0.
+    ///
+    /// # Example
+    /// ```
+    /// use approx::assert_abs_diff_eq;
+    /// use ndarray::{arr1, Array2};
+    /// use polyfit_residuals::weighted::residuals_from_front;
+    ///
+    /// let xs = arr1(&[1., 2., 3., 4., 5.]);
+    /// let ys = arr1(&[2., 4., 6., 8., 10.]);
+    /// let weights = arr1(&[1.5, 1., 1., 0.8, 0.8]);
+    /// // We want to fit polynomials with degree <= 2
+    /// let residuals: Array2<f64> = residuals_from_front(xs.view(), ys.view(), 2, weights.view()).unwrap();
+    /// // since ys = 2 * xs we expect the linear error to vanish on for example data[0..=2]
+    /// assert_abs_diff_eq!(residuals[[2, 1]], 0.0)
+    /// ```
+    pub fn residuals_from_front<R>(
+        xs: ArrayView1<R>,
+        ys: ArrayView1<R>,
+        max_degree: usize,
+        weights: ArrayView1<R>,
+    ) -> Result<Array2<R>, FitError>
+    where
+        R: Real,
+    {
+        if xs.len() != ys.len() || xs.len() != weights.len() {
+            return Err(FitError::InputsOfDifferentLengths);
+        }
+        let data_len = xs.len();
+
+        let max_dofs = max_degree + 1;
+        if max_dofs > data_len {
+            return Err(FitError::DegreeTooHigh);
+        }
+
+        // select one base point for each degree of freedom
+        let base = xs.slice(s![..max_dofs]).to_owned();
+        let mut system_matrix = generate_system_matrix(ys, base.view());
+
+        // apply weights to each row of the system matrix
+        for (mut row, &weight) in system_matrix.rows_mut().into_iter().zip(weights) {
+            for j in 0..=max_dofs {
+                row[j] = weight * row[j];
+            }
+        }
+
+        // first axis is rb, second is deg such that on data[0..=rb] the polynomial of degree deg
+        // has the residual error at this index
+        let mut residuals: Array2<R> = Array2::zeros([data_len, max_dofs]);
+
+        for (i, mut row) in residuals
+            .slice_mut(s![..max_dofs, ..])
+            .rows_mut()
+            .into_iter()
+            .enumerate()
+        {
+            row[i] = R::zero();
+        }
+
+        let last_row_idx = system_matrix.shape()[0] - 1;
+        let last_col_idx = system_matrix.shape()[1] - 1;
+
+        // eliminate base mat downwards such that we can start our later eliminations at deg 0
+        for base_idx in 1..max_dofs {
+            // at base_idx i there's the highest nonzero deg term is i
+            for deg in 0..base_idx {
+                apply_givens(system_matrix.view_mut(), base_idx, deg);
+                residuals[[base_idx, deg]] = system_matrix[[base_idx, last_col_idx]].powi(2)
+                    + residuals[[base_idx - 1, deg]];
+            }
+        }
+
+        // repeat procedure we already used on the basis entries: eliminate higher and higher
+        // orders for each data point in turn while accumulating the residuals along the way
+        for (i, (&x, &y, &weight)) in izip!(xs, ys, weights).enumerate().skip(max_dofs) {
+            // write weighted newton poly evaluation at x into last row of system matrix
+            system_matrix[[last_row_idx, 0]] = weight;
+            for col in 1..last_col_idx {
+                system_matrix[[last_row_idx, col]] =
+                    system_matrix[[last_row_idx, col - 1]] * (x - base[col - 1]);
+            }
+            // write weighted y into last column of last row of system matrix
+            system_matrix[[last_row_idx, last_col_idx]] = y * weight;
+            // eliminate the complete row we just added back to zeros and note down the residuals
+            // computed along the way
+            for deg in 0..max_dofs {
+                apply_givens(system_matrix.view_mut(), last_row_idx, deg);
+                residuals[[i, deg]] =
+                    system_matrix[[last_row_idx, last_col_idx]].powi(2) + residuals[[i - 1, deg]];
+            }
+        }
+        Ok(residuals)
+    }
+
+    /// Compute the weighted residual squared errors (RSS) for all polynomials of degree at most `max_deg`
+    /// for the data segments `xs[j..=i]`, `ys[j..=i]` for all `i`, `j`.
+    ///
+    /// # Returns
+    /// A vector such that element `j` contains the residuals for `data[j..=i]` for all `i`
+    /// in the format of [residuals_from_front].
+    ///
+    /// # Note
+    /// This function has linear time and memory complexity in the maximal degree and quadratic ones
+    /// in the length of the input.
+    /// For further details and an example see [residuals_from_front].
+    pub fn all_residuals<'x, 'y, 'w, R>(
+        xs: impl Into<ArrayView1<'x, R>>,
+        ys: impl Into<ArrayView1<'y, R>>,
+        max_degree: usize,
+        weights: impl Into<ArrayView1<'w, R>>,
+    ) -> Vec<Array2<R>>
+    where
+        R: Real + 'x + 'y + 'w,
+    {
+        let xs = xs.into();
+        let ys = ys.into();
+        let weights = weights.into();
+        let mut ret = Vec::with_capacity(xs.len());
+        for j in 0..xs.len() {
+            let max_dof_on_seg = xs.len() - j;
+            ret.push(
+                residuals_from_front(
+                    xs.slice(s![j..]),
+                    ys.slice(s![j..]),
+                    std::cmp::min(max_dof_on_seg - 1, max_degree),
+                    weights.slice(s![j..]),
+                )
+                .unwrap(),
+            );
+        }
+        ret
+    }
+
+    #[cfg(feature = "parallel_rayon")]
+    /// A parallel version of [all_residuals_par]. Please have a look at the sequential version for details.
+    pub fn all_residuals_par<'x, 'y, 'w, R>(
+        xs: impl Into<ArrayView1<'x, R>>,
+        ys: impl Into<ArrayView1<'y, R>>,
+        max_degree: usize,
+        weights: impl Into<ArrayView1<'w, R>>,
+    ) -> Vec<Array2<R>>
+    where
+        R: Real + Send + Sync + 'x + 'y + 'w,
+    {
+        use rayon::prelude::*;
+        let xs = xs.into();
+        let ys = ys.into();
+        let weights = weights.into();
+
+        let ret = (0..xs.len())
+            .into_par_iter()
+            .map(|j| {
+                let max_dof_on_seg = xs.len() - j;
+                residuals_from_front(
+                    xs.slice(s![j..]),
+                    ys.slice(s![j..]),
+                    std::cmp::min(max_dof_on_seg - 1, max_degree),
+                    weights.slice(s![j..]),
+                )
+                .unwrap()
+            })
+            .collect();
+        ret
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use approx::assert_abs_diff_eq;
+        use ndarray::{arr1, arr2, Array1};
+
+        use super::*;
+
+        #[test]
+        fn weights_one() {
+            let xs = arr1(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
+            let ys = arr1(&[3., 8., 15., 24., 35., 48., 63., 80., 99., 120.]);
+            let ws = arr1(&[1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]);
+            let our_sol: Array2<f64> =
+                residuals_from_front(xs.view(), ys.view(), 3, ws.view()).unwrap();
+            let correct_sol: Array2<f64> = arr2(&[
+                [
+                    0.00000000e+00,
+                    0.00000000e+00,
+                    0.00000000e+00,
+                    0.00000000e+00,
+                ],
+                [
+                    1.25000000e+01,
+                    0.00000000e+00,
+                    0.00000000e+00,
+                    0.00000000e+00,
+                ],
+                [
+                    7.26666667e+01,
+                    6.66666667e-01,
+                    0.00000000e+00,
+                    0.00000000e+00,
+                ],
+                [
+                    2.49000000e+02,
+                    4.00000000e+00,
+                    1.10933565e-31,
+                    0.00000000e+00,
+                ],
+                [
+                    6.54000000e+02,
+                    1.40000000e+01,
+                    1.60237371e-31,
+                    1.52146949e-31,
+                ],
+                [
+                    1.45483333e+03,
+                    3.73333333e+01,
+                    7.25998552e-30,
+                    1.53688367e-30,
+                ],
+                [
+                    2.88400000e+03,
+                    8.40000000e+01,
+                    7.25998552e-30,
+                    5.54305496e-30,
+                ],
+                [
+                    5.25000000e+03,
+                    1.68000000e+02,
+                    1.04154291e-29,
+                    5.54372640e-30,
+                ],
+                [
+                    8.94800000e+03,
+                    3.08000000e+02,
+                    3.88144217e-29,
+                    3.18162402e-29,
+                ],
+                [
+                    1.44705000e+04,
+                    5.28000000e+02,
+                    2.94405355e-28,
+                    1.11382159e-28,
+                ],
+            ]);
+            assert_abs_diff_eq!(&our_sol, &correct_sol, epsilon = 1e-5);
+        }
+
+        #[test]
+        fn tiny_example() {
+            let xs = arr1(&[1., 2.]);
+            let ys = arr1(&[2.1, 4.2]);
+            let ws = arr1(&[1., 2.]);
+            let correct_sol: Array2<f64> = arr2(&[[0.00000000e+00], [3.528]]);
+            let our_sol: Array2<f64> =
+                residuals_from_front(xs.view(), ys.view(), 0, ws.view()).unwrap();
+
+            assert_abs_diff_eq!(&our_sol, &correct_sol, epsilon = 1e-12);
+        }
+
+        #[test]
+        fn small_example() {
+            let xs = arr1(&[1., 2., 2.5, 3.]);
+            let ys = arr1(&[2.1, 4.2, 1.9, 4.]);
+            let ws = arr1(&[1., 2., 1., 0.8]);
+
+            let correct_sol: Array2<f64> = arr2(&[
+                [0.00000000e+00, 0.00000000e+00, 0.00000000e+00],
+                [3.52800000e+00, 0.00000000e+00, 0.00000000e+00],
+                [6.47333333e+00, 6.19172414e+00, 0.00000000e+00],
+                [6.63783133e+00, 6.19176377e+00, 4.49691980e+00],
+            ]);
+            let our_sol: Array2<f64> =
+                residuals_from_front(xs.view(), ys.view(), 2, ws.view()).unwrap();
+
+            assert_abs_diff_eq!(&our_sol, &correct_sol, epsilon = 1e-8);
+        }
+    }
+}
+
 /// Solves the linear system `matrix_product(lhs, x) = rhs` for `x`.
 ///
 /// # Returns
