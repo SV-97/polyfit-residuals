@@ -456,10 +456,161 @@ pub mod weighted {
         ret
     }
 
+    /// Try fitting a polynomial to some data and also compute the residual error.
+    ///
+    /// # Examples
+    /// Fit a linear polynomial to some data
+    /// ```
+    /// use polyfit_residuals::{weighted::try_fit_poly_with_residual, PolyFit};
+    /// use approx::assert_abs_diff_eq;
+    /// use ndarray::arr1;
+    ///
+    /// let xs = arr1(&[1., 2., 3., 4.]);
+    /// let ys = arr1(&[2., 3., 4., 5.]);
+    /// let ws = arr1(&[0.1, 0.1, 0.2, 0.6]);
+    /// let PolyFit { polynomial: poly, residual } =
+    ///     try_fit_poly_with_residual(xs.view(), ys.view(), 1, ws.view()).expect("Failed to fit linear polynomial to data");
+    /// // Note that the returned polynomial is given as P(x) = 2 + (x-1) where the 1 is the first
+    /// // element of `xs`
+    /// assert_abs_diff_eq!(residual, 1.11703937e-31);
+    /// assert_abs_diff_eq!(poly.left_eval(1.), 2., epsilon = 1e-12);
+    /// assert_abs_diff_eq!(poly.left_eval(2.), 3., epsilon = 1e-12);
+    /// assert_abs_diff_eq!(poly.left_eval(3.), 4., epsilon = 1e-12);
+    /// assert_abs_diff_eq!(poly.left_eval(4.), 5., epsilon = 1e-12);
+    /// ```
+    ///
+    /// Fit a cubic polynomial to some data
+    /// ```
+    /// use polyfit_residuals::{weighted::try_fit_poly_with_residual, PolyFit};
+    /// use approx::assert_abs_diff_eq;
+    /// use ndarray::arr1;
+    ///
+    /// let xs = arr1(&[0.        , 0.11111111, 0.22222222, 0.33333333, 0.44444444,
+    ///     0.55555556, 0.66666667, 0.77777778, 0.88888889, 1.        ]);
+    /// let ys = arr1(&[-4.99719342, -4.76675941, -4.57502219, -4.33219826, -4.14968982,
+    ///     -3.98840112, -3.91026478, -3.83464713, -3.93700013, -4.00937516]);
+    /// let ws = arr1(&[1., 2., 3., 1., 2., 3., 0.5, 0.7, 0.6, 3.]);
+    /// let PolyFit { polynomial: poly, residual } =
+    ///     try_fit_poly_with_residual(xs.view(), ys.view(), 3, ws.view()).expect("Failed to fit cubic polynomial to data");
+    /// assert_abs_diff_eq!(residual, 0.00414158, epsilon = 1e-6);
+    /// assert_abs_diff_eq!(poly.left_eval(2.), -12.427840764131307, epsilon = 1e-6);
+    /// ```
+    pub fn try_fit_poly_with_residual<R>(
+        xs: ArrayView1<R>,
+        ys: ArrayView1<R>,
+        degree: usize,
+        weights: ArrayView1<R>,
+    ) -> Result<PolyFit<R, R>, FitError>
+    where
+        R: Real + 'static,
+    {
+        if xs.len() != ys.len() || xs.len() != weights.len() {
+            return Err(FitError::InputsOfDifferentLengths);
+        }
+        let data_len = xs.len();
+
+        let max_dofs = degree + 1;
+        if max_dofs > data_len {
+            return Err(FitError::DegreeTooHigh);
+        }
+
+        // select one base point for each degree of freedom
+        let base = xs.slice(s![..max_dofs]).to_owned();
+        let mut system_matrix = generate_system_matrix(ys, base.view());
+
+        // apply weights to each row of the system matrix
+        for (mut row, &weight) in system_matrix.rows_mut().into_iter().zip(weights) {
+            for j in 0..=max_dofs {
+                row[j] = weight * row[j];
+            }
+        }
+
+        // first axis is rb, second is deg such that on data[0..=rb] the polynomial of degree deg
+        // has the residual error at this index
+
+        let last_row_idx = system_matrix.shape()[0] - 1;
+        let last_col_idx = system_matrix.shape()[1] - 1;
+
+        // TODO: this isn't necessary if we don't wanna compute all the intermediary residuals
+        // so we could omit this step
+        // eliminate base mat downwards such that we can start our later eliminations at deg 0
+        for base_idx in 1..max_dofs {
+            // at base_idx i there's the highest nonzero deg term is i
+            for deg in 0..base_idx {
+                apply_givens(system_matrix.view_mut(), base_idx, deg);
+            }
+        }
+
+        let mut residual = R::zero();
+
+        // repeat procedure we already used on the basis entries: eliminate higher and higher
+        // orders for each data point in turn while accumulating the residuals along the way
+        for (&x, &y, &weight) in izip!(xs, ys, weights).skip(max_dofs) {
+            // write weighted newton poly evaluation at x into last row of system matrix
+            system_matrix[[last_row_idx, 0]] = weight;
+            for col in 1..last_col_idx {
+                system_matrix[[last_row_idx, col]] =
+                    system_matrix[[last_row_idx, col - 1]] * (x - base[col - 1]);
+            }
+            // write weighted y into last column of last row of system matrix
+            system_matrix[[last_row_idx, last_col_idx]] = y * weight;
+            // eliminate the complete row we just added back to zeros
+            for deg in 0..max_dofs {
+                apply_givens(system_matrix.view_mut(), last_row_idx, deg);
+            }
+            residual = residual + system_matrix[[last_row_idx, last_col_idx]].powi(2);
+        }
+
+        // find coeffs by solving first few rows of matrix
+        let coeffs = solve_upper_triangular_system(
+            system_matrix.slice(s![..last_row_idx, ..last_col_idx]),
+            system_matrix.slice(s![..last_row_idx, last_col_idx]),
+        );
+        Ok(PolyFit {
+            polynomial: NewtonPolynomial::new(
+                coeffs.to_vec(),
+                base.slice(s![0..base.len() - 1]).to_vec(),
+            ),
+            residual,
+        })
+    }
+
+    /// Try fitting a polynomial to some data.
+    ///
+    /// # Examples
+    /// Fit a linear polynomial to some data
+    /// ```
+    /// use polyfit_residuals::try_fit_poly;
+    /// use approx::assert_abs_diff_eq;
+    /// use ndarray::arr1;
+    ///
+    /// let xs = arr1(&[1., 2., 3., 4.]);
+    /// let ys = arr1(&[2., 3., 4., 5.]);
+    /// let poly =
+    ///     try_fit_poly(xs.view(), ys.view(), 1).expect("Failed to fit linear polynomial to data");
+    /// // Note that the returned polynomial is given as P(x) = 2 + (x-1) where the 1 is the first
+    /// // element of `xs`
+    /// assert_abs_diff_eq!(poly.left_eval(1.), 2., epsilon = 1e-12);
+    /// assert_abs_diff_eq!(poly.left_eval(2.), 3., epsilon = 1e-12);
+    /// assert_abs_diff_eq!(poly.left_eval(3.), 4., epsilon = 1e-12);
+    /// assert_abs_diff_eq!(poly.left_eval(4.), 5., epsilon = 1e-12);
+    /// ```
+    pub fn try_fit_poly<R>(
+        xs: ArrayView1<R>,
+        ys: ArrayView1<R>,
+        degree: usize,
+        weights: ArrayView1<R>,
+    ) -> Result<OwnedNewtonPolynomial<R, R>, FitError>
+    where
+        R: Real + 'static,
+    {
+        try_fit_poly_with_residual(xs, ys, degree, weights).map(|polyfit| polyfit.polynomial)
+    }
+
     #[cfg(test)]
     mod tests {
         use approx::assert_abs_diff_eq;
-        use ndarray::{arr1, arr2, Array1};
+        use ndarray::{arr1, arr2};
 
         use super::*;
 
