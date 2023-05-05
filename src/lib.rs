@@ -268,7 +268,7 @@ pub mod weighted {
     //! Provides versions of the main functions for the case of
     //! a weighted least squares fit. So we calculate the optimal
     //! target values of
-    //! min_{p polynomial of deg d} ∑ᵢ (wᵢ(p(xᵢ) - yᵢ))²
+    //! min_{p polynomial of deg d} ∑ᵢ wᵢ(p(xᵢ) - yᵢ)²
     //! for all d and valid discrete intervals of i.
     use super::*;
     use itertools::izip;
@@ -301,7 +301,7 @@ pub mod weighted {
     ///
     /// let xs = arr1(&[1., 2., 3., 4., 5.]);
     /// let ys = arr1(&[2., 4., 6., 8., 10.]);
-    /// let weights = arr1(&[1.5, 1., 1., 0.8, 0.8]);
+    /// let weights = arr1(&[1.5, 1., 1., 0.8, 0.8]).map(|x| x * x);
     /// // We want to fit polynomials with degree <= 2
     /// let residuals: Array2<f64> = residuals_from_front(xs.view(), ys.view(), 2, weights.view()).unwrap();
     /// // since ys = 2 * xs we expect the linear error to vanish on for example data[0..=2]
@@ -333,7 +333,7 @@ pub mod weighted {
         // apply weights to each row of the system matrix
         for (mut row, &weight) in system_matrix.rows_mut().into_iter().zip(weights) {
             for j in 0..=max_dofs {
-                row[j] = weight * row[j];
+                row[j] = weight.sqrt() * row[j];
             }
         }
 
@@ -367,13 +367,13 @@ pub mod weighted {
         // orders for each data point in turn while accumulating the residuals along the way
         for (i, (&x, &y, &weight)) in izip!(xs, ys, weights).enumerate().skip(max_dofs) {
             // write weighted newton poly evaluation at x into last row of system matrix
-            system_matrix[[last_row_idx, 0]] = weight;
+            system_matrix[[last_row_idx, 0]] = weight.sqrt();
             for col in 1..last_col_idx {
                 system_matrix[[last_row_idx, col]] =
                     system_matrix[[last_row_idx, col - 1]] * (x - base[col - 1]);
             }
             // write weighted y into last column of last row of system matrix
-            system_matrix[[last_row_idx, last_col_idx]] = y * weight;
+            system_matrix[[last_row_idx, last_col_idx]] = y * weight.sqrt();
             // eliminate the complete row we just added back to zeros and note down the residuals
             // computed along the way
             for deg in 0..max_dofs {
@@ -467,7 +467,7 @@ pub mod weighted {
     ///
     /// let xs = arr1(&[1., 2., 3., 4.]);
     /// let ys = arr1(&[2., 3., 4., 5.]);
-    /// let ws = arr1(&[0.1, 0.1, 0.2, 0.6]);
+    /// let ws = arr1(&[0.1, 0.1, 0.2, 0.6]).map(|x| x * x);
     /// let PolyFit { polynomial: poly, residual } =
     ///     try_fit_poly_with_residual(xs.view(), ys.view(), 1, ws.view()).expect("Failed to fit linear polynomial to data");
     /// // Note that the returned polynomial is given as P(x) = 2 + (x-1) where the 1 is the first
@@ -489,7 +489,7 @@ pub mod weighted {
     ///     0.55555556, 0.66666667, 0.77777778, 0.88888889, 1.        ]);
     /// let ys = arr1(&[-4.99719342, -4.76675941, -4.57502219, -4.33219826, -4.14968982,
     ///     -3.98840112, -3.91026478, -3.83464713, -3.93700013, -4.00937516]);
-    /// let ws = arr1(&[1., 2., 3., 1., 2., 3., 0.5, 0.7, 0.6, 3.]);
+    /// let ws = arr1(&[1., 2., 3., 1., 2., 3., 0.5, 0.7, 0.6, 3.]).map(|x| x * x);
     /// let PolyFit { polynomial: poly, residual } =
     ///     try_fit_poly_with_residual(xs.view(), ys.view(), 3, ws.view()).expect("Failed to fit cubic polynomial to data");
     /// assert_abs_diff_eq!(residual, 0.00414158, epsilon = 1e-6);
@@ -521,7 +521,7 @@ pub mod weighted {
         // apply weights to each row of the system matrix
         for (mut row, &weight) in system_matrix.rows_mut().into_iter().zip(weights) {
             for j in 0..=max_dofs {
-                row[j] = weight * row[j];
+                row[j] = weight.sqrt() * row[j];
             }
         }
 
@@ -547,13 +547,13 @@ pub mod weighted {
         // orders for each data point in turn while accumulating the residuals along the way
         for (&x, &y, &weight) in izip!(xs, ys, weights).skip(max_dofs) {
             // write weighted newton poly evaluation at x into last row of system matrix
-            system_matrix[[last_row_idx, 0]] = weight;
+            system_matrix[[last_row_idx, 0]] = weight.sqrt();
             for col in 1..last_col_idx {
                 system_matrix[[last_row_idx, col]] =
                     system_matrix[[last_row_idx, col - 1]] * (x - base[col - 1]);
             }
             // write weighted y into last column of last row of system matrix
-            system_matrix[[last_row_idx, last_col_idx]] = y * weight;
+            system_matrix[[last_row_idx, last_col_idx]] = y * weight.sqrt();
             // eliminate the complete row we just added back to zeros
             for deg in 0..max_dofs {
                 apply_givens(system_matrix.view_mut(), last_row_idx, deg);
@@ -690,7 +690,7 @@ pub mod weighted {
         fn tiny_example() {
             let xs = arr1(&[1., 2.]);
             let ys = arr1(&[2.1, 4.2]);
-            let ws = arr1(&[1., 2.]);
+            let ws = arr1(&[1., 2.]).map(|x| x * x);
             let correct_sol: Array2<f64> = arr2(&[[0.00000000e+00], [3.528]]);
             let our_sol: Array2<f64> =
                 residuals_from_front(xs.view(), ys.view(), 0, ws.view()).unwrap();
@@ -702,7 +702,7 @@ pub mod weighted {
         fn small_example() {
             let xs = arr1(&[1., 2., 2.5, 3.]);
             let ys = arr1(&[2.1, 4.2, 1.9, 4.]);
-            let ws = arr1(&[1., 2., 1., 0.8]);
+            let ws = arr1(&[1., 2., 1., 0.8]).map(|x| x * x);
 
             let correct_sol: Array2<f64> = arr2(&[
                 [0.00000000e+00, 0.00000000e+00, 0.00000000e+00],
