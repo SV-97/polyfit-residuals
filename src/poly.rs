@@ -72,6 +72,41 @@ where
         })
     }
 
+    /// Evaluate the polynomial "from the right" as α₀1ₓ + (α₁ + (α₂ + (...)(x-x₃))(x-x₂))(x-x₁)
+    pub fn right_eval<Y>(&self, x: X) -> Y
+    where
+        C: Clone + Mul<X, Output = Y>,
+        X: Clone + One + Sub<Output = X> + Mul<Y, Output = Y>,
+        Y: Add<Output = Y>,
+    {
+        let mut it = self
+            .basis_elems
+            .as_ref()
+            .iter()
+            .map(|x_i| x.clone() - x_i.clone())
+            .rev()
+            .chain(iter::once(X::one()))
+            .zip(self.coeffs.as_ref().iter().rev());
+        let init = {
+            let (x, alpha) = it.next().unwrap();
+            alpha.clone() * x
+        };
+        it.fold(init, |acc, (x_i, alpha_i)| {
+            x_i * (alpha_i.clone() * X::one() + acc)
+        })
+    }
+
+    /// Evaluate the polynomial at a point
+    pub fn eval<Y>(&self, x: X) -> Y
+    where
+        C: Clone + Mul<X, Output = Y>,
+        X: Clone + One + Sub<Output = X> + Mul<C, Output = Y> + Mul<Y, Output = Y>,
+        Y: Add<Output = Y> + Eq + std::fmt::Debug,
+    {
+        debug_assert_eq!(self.left_eval(x.clone()), self.right_eval(x.clone()));
+        self.left_eval(x)
+    }
+
     /// Turn a polynomial into it's constituent coefficients and basis elements
     pub fn into_raw(self) -> (DataC, DataX) {
         let Self {
@@ -95,5 +130,25 @@ mod tests {
         assert_eq!(poly.left_eval(15), -66);
         assert_eq!(poly.left_eval(2), 415);
         assert_eq!(poly.left_eval(5), 214);
+    }
+
+    #[test]
+    fn right_eval() {
+        let poly = NewtonPolynomial::new(vec![-1, 2, 3], vec![10, 20]);
+        assert_eq!(poly.right_eval(10), -1);
+        assert_eq!(poly.right_eval(20), 19);
+        assert_eq!(poly.right_eval(15), -66);
+        assert_eq!(poly.right_eval(2), 415);
+        assert_eq!(poly.right_eval(5), 214);
+    }
+
+    #[test]
+    fn eval() {
+        let poly = NewtonPolynomial::new(vec![-1, 2, 3], vec![10, 20]);
+        assert_eq!(poly.eval(10), -1);
+        assert_eq!(poly.eval(20), 19);
+        assert_eq!(poly.eval(15), -66);
+        assert_eq!(poly.eval(2), 415);
+        assert_eq!(poly.eval(5), 214);
     }
 }
