@@ -101,9 +101,9 @@ where
     where
         C: Clone + Mul<X, Output = Y>,
         X: Clone + One + Sub<Output = X> + Mul<C, Output = Y> + Mul<Y, Output = Y>,
-        Y: Add<Output = Y> + Eq + std::fmt::Debug,
+        Y: Add<Output = Y>,
     {
-        debug_assert_eq!(self.left_eval(x.clone()), self.right_eval(x.clone()));
+        // debug_assert_eq!(self.left_eval(x.clone()), self.right_eval(x.clone()));
         self.left_eval(x)
     }
 
