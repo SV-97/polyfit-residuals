@@ -78,7 +78,7 @@ where
         let b1 = base
             .slice(s![1_usize..])
             .to_owned()
-            .into_shape([base.len() - 1, 1])
+            .into_shape_with_order([base.len() - 1, 1])
             .unwrap();
         b1 - base.slice(s![..base.len() - 1])
     };
@@ -755,7 +755,7 @@ where
     assert_eq!(lhs.shape()[1], rhs.shape()[0]);
     let row_count = rhs.shape()[0];
     let mut sol = Array1::uninit(row_count);
-    for i in (0..row_count).into_iter().rev() {
+    for i in (0..row_count).rev() {
         let already_solved = unsafe { sol.slice(s![i + 1..]).assume_init() };
         let ax = lhs.slice(s![i, i + 1..]).dot(&already_solved);
         sol[i] = MaybeUninit::new((rhs[i] - ax) / lhs[[i, i]]);

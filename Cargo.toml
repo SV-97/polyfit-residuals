@@ -1,6 +1,6 @@
 [package]
 name = "polyfit-residuals"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2021"
 description = "Efficiently calculate the residual errors (in the least squares sense) of all polynomial models (up to some degree) for a given dataset and compute least-squares polynomial fits."
 authors = ["Stefan Volz"]
@@ -22,13 +22,13 @@ categories = ["algorithms", "mathematics", "science"]
 
 [dependencies]
 itertools = "0.13.0"
-ndarray = "0.15.6"
+ndarray = "0.16.1"
 num-traits = "0.2.15"
 rayon = { version = "1.6.1", optional = true }
 
 [dev-dependencies]
 approx = "0.5.1"
-ndarray = { version = "0.15.6", features = ["approx-0_5"] }
+ndarray = { version = "0.16.1", features = ["approx"] }
 criterion = "0.5.1"
 maybe-debug = "0.1.0"
 
