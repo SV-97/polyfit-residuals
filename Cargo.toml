@@ -41,3 +41,8 @@ default = ["parallel_rayon"]
 # Add rayon-based parallel implementation.
 parallel_rayon = ["dep:rayon"]
 nightly-only = []
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
