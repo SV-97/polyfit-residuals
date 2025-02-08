@@ -1088,7 +1088,7 @@ mod tests {
                 12.160173160173189,
             ],
         ]);
-        println!("{:25.e}", &sol[0] - &correct_sol_0);
+        println!("{:25e}", &sol[0] - &correct_sol_0);
         assert_abs_diff_eq!(&sol[0], &correct_sol_0, epsilon = 1e-8);
 
         let correct_sol_1 = arr2(&[
@@ -1107,7 +1107,7 @@ mod tests {
             ],
         ]);
 
-        println!("{:25.e}", &sol[1] - &correct_sol_1);
+        println!("{:25e}", &sol[1] - &correct_sol_1);
         assert_abs_diff_eq!(&sol[1], &correct_sol_1, epsilon = 1e-8);
 
         let correct_sol_2 = arr2(&[
@@ -1117,7 +1117,7 @@ mod tests {
             [54.0, 54.0, 5.0, 0., 0.],
             [134.0, 94.0, 11.428571428571436, 1.4285714285714333, 0.],
         ]);
-        println!("{:25.e}", &sol[2] - &correct_sol_2);
+        println!("{:25e}", &sol[2] - &correct_sol_2);
         assert_abs_diff_eq!(&sol[2], &correct_sol_2, epsilon = 1e-8);
 
         let correct_sol_3 = arr2(&[
@@ -1126,7 +1126,7 @@ mod tests {
             [32.66666666666666666, 0.666666666666666666666, 0., 0.],
             [129.0, 4.0, 1.232595164407831e-30, 0.],
         ]);
-        println!("{:25.e}", &sol[3] - &correct_sol_3);
+        println!("{:25e}", &sol[3] - &correct_sol_3);
         assert_abs_diff_eq!(&sol[3], &correct_sol_3, epsilon = 1e-8);
 
         let correct_sol_4 = arr2(&[
@@ -1134,11 +1134,11 @@ mod tests {
             [12.5, 0., 0.],
             [72.6666666666666666666, 0.6666666666666641, 0.],
         ]);
-        println!("{:25.e}", &sol[4] - &correct_sol_4);
+        println!("{:25e}", &sol[4] - &correct_sol_4);
         assert_abs_diff_eq!(&sol[4], &correct_sol_4, epsilon = 1e-8);
 
         let correct_sol_5 = arr2(&[[0., 0.], [24.5, 0.]]);
-        println!("{:25.e}", &sol[5] - &correct_sol_5);
+        println!("{:25e}", &sol[5] - &correct_sol_5);
         assert_abs_diff_eq!(&sol[5], &correct_sol_5, epsilon = 1e-8);
     }
 }
