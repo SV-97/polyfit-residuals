@@ -1,6 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use ndarray::Array1;
 use polyfit_residuals::{all_residuals, all_residuals_par, residuals_from_front};
+use std::hint::black_box;
 
 fn run_residuals_from_front(data_len: usize, max_degree: usize) {
     let xs = Array1::linspace(1., 10_000_000., data_len);

@@ -53,7 +53,7 @@ where
 /// # Arguments
 /// * `ys` - The "output values" / right hand sides corresponding to the basis elements `base`.
 /// * `base` - The collection of the (xᵢ)ᵢ corresponding to the terms (x - xᵢ) in the Newton basis
-///     being used.
+///   being used.
 fn generate_system_matrix<R>(ys: ArrayView1<R>, base: ArrayView1<R>) -> Array2<R>
 where
     R: Real,
@@ -1123,7 +1123,7 @@ mod tests {
         let correct_sol_3 = arr2(&[
             [0., 0., 0., 0.],
             [4.5, 0., 0., 0.],
-            [32.66666666666666666, 0.666666666666666666666, 0., 0.],
+            [32.666_666_666_666_664, 0.666_666_666_666_666_6, 0., 0.],
             [129.0, 4.0, 1.232595164407831e-30, 0.],
         ]);
         println!("{:25e}", &sol[3] - &correct_sol_3);
@@ -1132,7 +1132,7 @@ mod tests {
         let correct_sol_4 = arr2(&[
             [0., 0., 0.],
             [12.5, 0., 0.],
-            [72.6666666666666666666, 0.6666666666666641, 0.],
+            [72.666_666_666_666_67, 0.6666666666666641, 0.],
         ]);
         println!("{:25e}", &sol[4] - &correct_sol_4);
         assert_abs_diff_eq!(&sol[4], &correct_sol_4, epsilon = 1e-8);
